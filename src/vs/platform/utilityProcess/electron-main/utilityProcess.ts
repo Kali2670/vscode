@@ -338,6 +338,30 @@ export class UtilityProcess extends Disposable {
 			this.onDidExitOrCrashOrKill();
 		}));
 
+		// V8 Sandbox Fatal Error
+		this._register(Event.fromNodeEventEmitter<string[]>(process, 'v8-sandbox-error')(addons => {
+			this.log(`crashed due to v8 sandbox failure with ${addons}`, Severity.Info);
+
+			// Telemetry
+			type UtilityProcessV8SandboxCrashClassification = {
+				type: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The type of utility process to understand the origin of the crash better.' };
+				reason: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The reason of the utility process crash to understand the nature of the crash better.' };
+				addons: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The list of addons loaded in the utility process to understand the nature of the crash better' };
+				owner: 'deepak1556';
+				comment: 'Provides insight into V8 sandbox FATAL error caused by native addons.';
+			};
+			type UtilityProcessV8SandboxCrashEvent = {
+				type: string;
+				reason: string;
+				addons: string[];
+			};
+			this.telemetryService.publicLog2<UtilityProcessV8SandboxCrashEvent, UtilityProcessV8SandboxCrashClassification>('utilityprocessv8sandboxcrash', {
+				type: configuration.type,
+				reason: 'V8_ArrayBuffer_NewBackingStore',
+				addons
+			});
+		}));
+
 		// Child process gone
 		this._register(Event.fromNodeEventEmitter<{ details: Details }>(app, 'child-process-gone', (event, details) => ({ event, details }))(({ details }) => {
 			if (details.type === 'Utility' && details.name === serviceName && !this.isNormalExit(details.exitCode)) {
@@ -367,6 +391,27 @@ export class UtilityProcess extends Disposable {
 
 				// Cleanup
 				this.onDidExitOrCrashOrKill();
+			} else if ((details as any).type === 'ElectronRunAsNode' && (details as any).reason === 'v8-sandbox-error') {
+				this.logService.error(`ELECTRON_RUN_AS_NODE process crashed with code ${details.exitCode} due to V8 sandbox error.'`);
+
+				// Telemetry
+				type RunAsNodeV8SandboxCrashClassification = {
+					type: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The type of process to understand the origin of the crash better.' };
+					code: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The exit code of the process crash to understand the nature of the crash better.' };
+					addons: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The list of addons loaded in the process to understand the nature of the crash better' };
+					owner: 'deepak1556';
+					comment: 'Provides insight into V8 sandbox FATAL error caused by native addons.';
+				};
+				type RunAsNodeV8SandboxCrashEvent = {
+					type: string;
+					code: number;
+					addons: string[];
+				};
+				this.telemetryService.publicLog2<RunAsNodeV8SandboxCrashEvent, RunAsNodeV8SandboxCrashClassification>('runasnodev8sandboxcrash', {
+					type: details.type,
+					code: details.exitCode,
+					addons: (details as any).addons
+				});
 			}
 		}));
 	}
